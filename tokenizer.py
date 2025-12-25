@@ -42,3 +42,34 @@ def tokenize(pattern: str):
             raise ValueError(f"Unsupported character: {ch}")
         
     return tokens 
+
+def inser_concat(tokens):
+    result = []
+    
+    for i in range(len(tokens)):
+        result.append(tokens[i])
+
+        if i == len(tokens) - 1:
+            break
+
+        t1 = tokens[i]
+        t2 = tokens[i+1]
+        
+        if(
+            (t1.type in {
+                TokenType.CHAR,
+                TokenType.RPAREN,
+                TokenType.STAR,
+                TokenType.PLUS,
+                TokenType.QUESTION,
+                
+            })
+            and 
+            (t2.type in {
+                TokenType.CHAR,
+                TokenType.LPAREN,
+            })
+        ):
+            result.append(Token(TokenType.CONCAT))
+
+    return result
