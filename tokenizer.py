@@ -43,7 +43,7 @@ def tokenize(pattern: str):
         
     return tokens 
 
-def inser_concat(tokens):
+def insert_concat(tokens):
     result = []
     
     for i in range(len(tokens)):
