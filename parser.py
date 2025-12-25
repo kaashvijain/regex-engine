@@ -27,7 +27,7 @@ class OrNode(ASTNode):
         return f"Or({self.left}, {self.right})"
     
 class StarNode(ASTNode):
-    def __init(self, child):
+    def __init__(self, child):
         self.child = child
 
     def __repr__(self):
@@ -123,14 +123,3 @@ class Parser:
             raise SyntaxError("Unexpected extra tokens")
         return node
     
-if __name__ == "__main__":
-    from tokenizer import tokenize, insert_concat
-
-    pattern = "a(b|c)*d"
-    tokens = tokenize(pattern)
-    tokens = insert_concat(tokens)
-
-    parser = Parser(tokens)
-    ast = parser.parse()
-
-    print(ast)
