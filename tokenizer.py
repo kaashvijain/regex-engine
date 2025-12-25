@@ -42,8 +42,3 @@ def tokenize(pattern: str):
             raise ValueError(f"Unsupported character: {ch}")
         
     return tokens 
-
-if __name__ == "__main__":
-    pattern = "a(b|c)*d"
-    tokens = tokenize(pattern)
-    print(tokens)
