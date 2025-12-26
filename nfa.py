@@ -123,17 +123,3 @@ def build_question(node):
     child_nfa.accept.add_epsilon(accept)
 
     return NFA(start, accept)
-
-
-if __name__ == "__main__":
-    from tokenizer import tokenize, insert_concat
-    from parser import Parser
-
-    pattern = "a(b|c)*d"
-    tokens = insert_concat(tokenize(pattern))
-    ast = Parser(tokens).parse()
-
-    nfa = build_nfa(ast)
-
-    print("Start: ", nfa.start)
-    print("Accept: ", nfa.accept)
