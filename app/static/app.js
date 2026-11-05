@@ -23,7 +23,6 @@
     next: $("btn-next"),
     first: $("btn-reset"),
     last: $("btn-end"),
-    themeBtn: $("theme-btn"),
     zoomBtn: $("zoom-btn"),
   };
 
@@ -51,21 +50,33 @@
     if (forced) return forced;
     return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
+  const themeButtons = [...document.querySelectorAll(".daynight [role=radio]")];
   function applyThemeButton() {
-    const dark = currentTheme() === "dark";
-    const label = dark ? "Switch to light theme" : "Switch to dark theme";
-    els.themeBtn.setAttribute("aria-label", label);
-    els.themeBtn.title = label;
-    els.themeBtn.querySelector("use").setAttribute("href", dark ? "#i-sun" : "#i-moon");
+    const theme = currentTheme();
+    themeButtons.forEach((b) => {
+      const on = b.dataset.themeChoice === theme;
+      b.setAttribute("aria-checked", String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+  }
+  function setTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    storage.set("signalbox-theme", theme);
+    applyThemeButton();
   }
   const savedTheme = storage.get("signalbox-theme");
   if (savedTheme === "light" || savedTheme === "dark") document.documentElement.dataset.theme = savedTheme;
   applyThemeButton();
-  els.themeBtn.addEventListener("click", () => {
-    const next = currentTheme() === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    storage.set("signalbox-theme", next);
-    applyThemeButton();
+  themeButtons.forEach((b) => {
+    b.addEventListener("click", () => setTheme(b.dataset.themeChoice));
+    b.addEventListener("keydown", (e) => {
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+        e.preventDefault();
+        const next = currentTheme() === "dark" ? "light" : "dark";
+        setTheme(next);
+        themeButtons.find((x) => x.dataset.themeChoice === next).focus();
+      }
+    });
   });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyThemeButton);
 

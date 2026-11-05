@@ -32,17 +32,22 @@
   </defs>
 </svg>
 
+<main>
 <header class="topbar">
   <div class="brand">
     <span class="brand-name">Signalbox</span>
     <span class="brand-sub">a regex engine you can watch</span>
   </div>
-  <button class="icon-btn" id="theme-btn" type="button" aria-label="Switch to dark theme">
-    <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>
-  </button>
+  <div class="daynight" role="radiogroup" aria-label="Theme">
+    <button type="button" role="radio" aria-checked="true" data-theme-choice="light">
+      <svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span>Day</span>
+    </button>
+    <button type="button" role="radio" aria-checked="false" data-theme-choice="dark">
+      <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span>Night</span>
+    </button>
+  </div>
 </header>
 
-<main>
   <section class="desk" aria-label="Pattern and test string">
     <div class="desk-inputs">
       <div class="field">
@@ -96,9 +101,15 @@
     </div>
 
     <div class="verdict" id="signal" aria-live="polite">
-      <span class="verdict-dot" aria-hidden="true"></span>
-      <span class="verdict-word" id="signal-word">—</span>
-      <span class="verdict-detail" id="signal-detail"></span>
+      <div class="signal-head" aria-hidden="true">
+        <span class="aspect red"></span>
+        <span class="aspect yellow"></span>
+        <span class="aspect green"></span>
+      </div>
+      <div class="verdict-text">
+        <span class="verdict-word" id="signal-word">—</span>
+        <span class="verdict-detail" id="signal-detail"></span>
+      </div>
     </div>
   </section>
 

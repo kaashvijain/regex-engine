@@ -13,7 +13,7 @@
 | Accent `--accent` (active state, current step, focus) | cobalt `#2f5bff` | `#6d8bff` |
 | Result `--ok` / `--fail` / `--warn` | `#1a7f37` / `#cf222e` / `#9a6700` | `#3fb950` / `#f85149` / `#d29922` |
 
-Theme: follows `prefers-color-scheme`. The top-right button forces `data-theme` and saves the choice to localStorage.
+Theme: follows `prefers-color-scheme` until the visitor picks one. The **Day / Night** pill in the header panel sets `data-theme` and saves the choice to localStorage.
 
 ## Type
 
@@ -22,7 +22,9 @@ Theme: follows `prefers-color-scheme`. The top-right button forces `data-theme` 
 
 ## Components
 
-- **Desk**: the pattern and test-string inputs (sunk fields with a 3px cobalt focus ring), the Full match / Search segmented control, example chips and a "Syntax" popover. The verdict sits to the right: a coloured dot, a large word and a detail line. On phones it moves to the top as a single row.
+- **Header panel**: its own card at the top, holding the name, the tagline and the Day / Night pill. On phones the pill shows icons only.
+- **Desk**: the pattern and test-string inputs (sunk fields with a 3px cobalt focus ring), the Full match / Search segmented control, example chips and a "Syntax" popover.
+- **Traffic light (verdict)**: a near-black three-lamp signal head. Exactly one lamp glows: green for a match, red for no match or an invalid pattern, and yellow when search finds only empty matches. The verdict word and detail sit beside it in the same tone. It is vertical on desktop; on phones it is horizontal and moves to the top of the desk.
 - **Diagram panel**: tabs with a cobalt underline on the selected one, a caption, and a `1:1` zoom toggle. The canvas has a dotted ground. Graphviz SVG is restyled by CSS:
   - `.lit` nodes are filled cobalt; `.lit.accepting` nodes are green.
   - `.edge.taken` edges are cobalt.
