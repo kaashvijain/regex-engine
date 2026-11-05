@@ -1,45 +1,45 @@
 # Design: Signalbox
 
-The UI is a **railway signal-box mimic panel**. The automaton is drawn as track, states are lamps, the input string is a train-describer readout, and the match result is a three-aspect signal. Everything new should be expressed in that vocabulary.
+**Ink & paper.** A neutral off-white (or near-black) ground, ink-black line work, and a single cobalt accent that means "the machine is here right now". The diagrams carry the page; the chrome stays quiet.
 
 ## Tokens (`app/static/style.css` `:root`)
 
-| Role | Light (day panel) | Dark (night panel) |
+| Role | Light | Dark |
 |---|---|---|
-| Panel ground `--panel` | `#c3cbbf` grey-green | `#151a17` |
-| Raised / sunk | `--panel-raised` / `--panel-sunk` | same names |
-| Engraved plate `--plate` / `--plate-ink` | `#1a1f1b` / `#eef0e6` | `#0a0d0b` / `#e8ebe1` |
-| Track `--track` / ε-track `--track-dim` | `#1f2621` / `#56645a` | `#b9c4ba` / `#66736a` |
-| Lit lamp `--lamp` + `--lamp-glow` | warm white `#fff4c9` | `#fff1bd` |
-| Taken track `--taken` | amber `#d98f00` | `#ffb21f` |
-| Signal aspects | `--sig-red #d6372e`, `--sig-yellow #f2b324`, `--sig-green #24a457` | same |
-| Describer LED `--led` on `--led-bg` | `#ffb43a` on `#0f120f` | same |
+| Ground `--bg` | `#f7f7f5` | `#0f0f10` |
+| Surface `--surface` / sunk `--sunk` | `#ffffff` / `#f0f0ed` | `#161618` / `#1c1c1f` |
+| Lines `--line` / `--line-strong` | `#e4e4e0` / `#cbcbc6` | `#29292d` / `#3b3b41` |
+| Ink `--ink` / `--ink-soft` / `--ink-faint` | `#111` / `#5e5e59` / `#8d8d87` | `#ededed` / `#a1a1a6` / `#75757b` |
+| Accent `--accent` (active state, current step, focus) | cobalt `#2f5bff` | `#6d8bff` |
+| Result `--ok` / `--fail` / `--warn` | `#1a7f37` / `#cf222e` / `#9a6700` | `#3fb950` / `#f85149` / `#d29922` |
 
-Theme: follows `prefers-color-scheme`. The header button forces `data-theme` and saves the choice to localStorage.
+Theme: follows `prefers-color-scheme`. The top-right button forces `data-theme` and saves the choice to localStorage.
 
 ## Type
 
-- **Barlow Condensed** 600–700, uppercase, tracked `.1–.16em`: engraved plate labels, buttons, tabs, nameplate.
-- **Barlow** 400–600: body copy and explanations.
-- **JetBrains Mono**: patterns, test strings, state IDs, readouts. Use it only for code and data.
-- **DotGothic16**: train-describer character cells only.
+- **Geist** (400–700): all UI text. The brand and the verdict word use tight negative tracking.
+- **Geist Mono**: patterns, test strings, state IDs, edge labels, readouts and token chips. Use it only for code and data.
 
 ## Components
 
-- **Plate input**: a black sunk field with plate ink and an LED-amber caret. Its border turns red on a fault.
-- **Two-position switch** (`.mode-switch`) and **tab plates** (`.view-switch`): the selected plate is filled black.
-- **Signal head**: three aspect lamps plus a black plate showing the result word and a one-line detail. It lies horizontal on phones.
-- **Mimic**: Graphviz SVG restyled by CSS, on a dotted panel ground. `.lit` marks lamps, `.lit.accepting` turns green, `.edge.taken` is amber track, and `.edge.eps` is dashed dim track. Zoom is "auto": it fits unless that would shrink the drawing below 55%. A 1:1 toggle overrides it.
-- **Berths**: fixed-size LED cells. `.read` cells are dimmed, `.current` is solid amber, and `.matched` gets a green underline (search mode).
-- **Levers**: round raised buttons. The primary (run/pause) lever is filled black.
-- **Fault**: a red "FAULT" tag, the message with a 1-based position, and a red triangle under the offending character. The previous diagram stays visible, dimmed and greyed (`.mimic.stale`).
+- **Desk**: the pattern and test-string inputs (sunk fields with a 3px cobalt focus ring), the Full match / Search segmented control, example chips and a "Syntax" popover. The verdict sits to the right: a coloured dot, a large word and a detail line. On phones it moves to the top as a single row.
+- **Diagram panel**: tabs with a cobalt underline on the selected one, a caption, and a `1:1` zoom toggle. The canvas has a dotted ground. Graphviz SVG is restyled by CSS:
+  - `.lit` nodes are filled cobalt; `.lit.accepting` nodes are green.
+  - `.edge.taken` edges are cobalt.
+  - ε-edges are dashed in faint ink.
+  - Parse-tree operator nodes are filled ink; leaf nodes are outlined.
+- **Live parse tree**: in the Parse tree tab the step controls replay the parser. Nodes appear in creation order (`ast.build` from the API). The newest node is cobalt, and the pattern characters it covers are highlighted. The build replays whenever the tab opens or the pattern changes.
+- **Input cells**: one mono cell per character. `.read` cells are faint, `.current` is cobalt, `.span` is a cobalt tint (parse tree), and `.matched` gets a green underline (search mode).
+- **Step controls**: first (bar + double chevron), previous (chevron), play/pause (the round ink button), next (chevron), last (double chevron + bar), then a range slider. Keyboard: ← → Home End Space.
 
 ## Motion
 
-There is one authored moment. A lamp that has just lit "warms up" (a brightness and glow ramp over 420 ms with an expo ease-out). Run mode advances a step every 650 ms. Everything else is a short colour transition. `prefers-reduced-motion` turns transitions off.
+- Lit states "pop" (scale 1.18 → 1 over 380 ms, expo ease-out).
+- Parse-tree nodes rise in (400 ms).
+- Playback runs at 650 ms per character, or 420 ms per parse node.
+- `prefers-reduced-motion` turns animation off and skips the automatic parse replay.
 
 ## Rules
 
-- No new colours outside the tokens. Red, yellow and green are reserved for signal meaning.
-- The body background has faint 48px tile seams, standing in for the panel's tiles. Keep them faint.
-- Icons are inline SVG symbols in `index.html` with filled 20px glyphs. Add new ones in the same style.
+- Cobalt means only "current / active". Green, red and yellow are only for the verdict and for search matches.
+- No new colours outside the tokens. Keep icons as inline SVG symbols with 1.8px strokes.

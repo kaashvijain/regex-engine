@@ -14,30 +14,32 @@
     signalDetail: $("signal-detail"),
     mimic: $("mimic"),
     caption: $("panel-caption"),
+    describerLabel: $("describer-label"),
     berths: $("berths"),
     readout: $("readout"),
     scrub: $("scrub"),
     play: $("btn-play"),
     prev: $("btn-prev"),
     next: $("btn-next"),
-    reset: $("btn-reset"),
-    end: $("btn-end"),
-    statNfa: $("stat-nfa"),
-    statDfa: $("stat-dfa"),
-    statTok: $("stat-tok"),
+    first: $("btn-reset"),
+    last: $("btn-end"),
     themeBtn: $("theme-btn"),
-    shareBtn: $("share-btn"),
+    zoomBtn: $("zoom-btn"),
   };
 
   const state = {
     mode: "full",
     view: "nfa",
     data: null,      // last successful /api/analyze response
-    step: 0,
+    step: 0,         // simulation step (NFA / DFA / tokens views)
+    astStep: 0,      // parse-tree build step
     playing: null,   // interval id
     svgCache: {},    // view -> SVGElement for the current data
     reqId: 0,
+    zoom: "auto",
   };
+
+  const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------------- theme ---------------- */
   const storage = {
@@ -51,8 +53,9 @@
   }
   function applyThemeButton() {
     const dark = currentTheme() === "dark";
-    els.themeBtn.setAttribute("aria-label", dark ? "Switch to light panel" : "Switch to dark panel");
-    els.themeBtn.title = els.themeBtn.getAttribute("aria-label");
+    const label = dark ? "Switch to light theme" : "Switch to dark theme";
+    els.themeBtn.setAttribute("aria-label", label);
+    els.themeBtn.title = label;
     els.themeBtn.querySelector("use").setAttribute("href", dark ? "#i-sun" : "#i-moon");
   }
   const savedTheme = storage.get("signalbox-theme");
@@ -66,7 +69,7 @@
   });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyThemeButton);
 
-  /* ---------------- URL state ---------------- */
+  /* ---------------- URL state (the address bar is the share link) ---------------- */
   function readUrl() {
     const q = new URLSearchParams(location.search);
     if (q.has("p")) els.pattern.value = q.get("p");
@@ -79,18 +82,6 @@
     if (state.view !== "nfa") q.set("v", state.view);
     history.replaceState(null, "", "?" + q.toString());
   }
-  els.shareBtn.addEventListener("click", async () => {
-    writeUrl();
-    const label = els.shareBtn.querySelector("span");
-    try {
-      await navigator.clipboard.writeText(location.href);
-      label.textContent = "Copied";
-    } catch {
-      label.textContent = "Link in address bar";
-    }
-    els.shareBtn.classList.add("copied");
-    setTimeout(() => { label.textContent = "Copy link"; els.shareBtn.classList.remove("copied"); }, 1800);
-  });
 
   /* ---------------- viz ---------------- */
   let vizPromise = null;
@@ -109,18 +100,14 @@
     svg.removeAttribute("width");
     svg.removeAttribute("height");
     const vb = svg.viewBox.baseVal;
-    // Natural size, scaled up a touch; the panel scrolls when it's wider than the screen.
-    const scale = view === "ast" ? 1.15 : 1.25;
+    const scale = view === "ast" ? 1.2 : 1.25;
     svg.style.width = Math.round(vb.width * scale) + "px";
     svg.classList.add(view);
-    // Graphviz copies the DOT `class` attr onto <g>; drop titles so hover shows our tooltips only.
     svg.querySelectorAll("title").forEach((t) => {
       if (!t.parentNode.matches(".node[id^='dfa-']")) t.remove();
     });
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", {
-      nfa: "NFA state diagram", dfa: "DFA state diagram", ast: "Parse tree",
-    }[view]);
+    svg.setAttribute("aria-label", { nfa: "NFA state diagram", dfa: "DFA state diagram", ast: "Parse tree" }[view]);
     return svg;
   }
 
@@ -152,94 +139,88 @@
     if (res.status === 400) {
       stop();
       showFault(body.error, body.position);
-      setSignal("red", "Fault", "fix the pattern");
+      setVerdict("red", "Invalid", "fix the pattern");
       if (state.data) {
         els.mimic.classList.add("stale");
         els.caption.textContent = "Showing the last valid pattern.";
       } else {
-        els.mimic.replaceChildren(msg("Fix the pattern to draw the panel."));
+        els.mimic.replaceChildren(msg("Fix the pattern to draw the diagram."));
       }
       return;
     }
     if (!res.ok) {
-      const msg = res.status === 422 ? "Input too long: patterns up to 200 characters, strings up to 2000." : "The engine hit an unexpected error.";
-      showFault(msg, null);
+      const m = res.status === 422 ? "Input too long: patterns up to 200 characters, strings up to 2000." : "The engine hit an unexpected error.";
+      showFault(m, null);
       return;
     }
+    const patternChanged = !state.data || state.data.pattern !== body.pattern;
     clearFault();
     stop();
     state.data = body;
     state.svgCache = {};
     state.step = body.trace.length - 1; // show the final state first
-    els.scrub.max = String(body.trace.length - 1);
-    els.statNfa.textContent = body.nfa.states;
-    els.statDfa.textContent = body.dfa.states + (body.dfa.truncated ? "+" : "");
-    els.statTok.textContent = body.tokens.filter((t) => t.type !== "CONCAT").length;
-    updateSignal();
+    state.astStep = body.ast.build.length;
+    updateVerdict();
     await drawView();
-    renderBerths();
-    applyStep(false);
+    // Parse tree: replay the build whenever the pattern changes.
+    if (state.view === "ast" && patternChanged) replayBuild();
   }
 
   /* ---------------- faults ---------------- */
   function showFault(message, position) {
     els.fault.hidden = false;
-    els.faultText.textContent = position == null ? message : `${message} — position ${position + 1}.`;
+    els.faultText.textContent = position == null ? message : `${message} (character ${position + 1})`;
     els.patternWrap.classList.toggle("has-fault", position != null);
-    if (position != null) {
-      // Place a caret under the offending character.
-      const input = els.pattern;
-      const cs = getComputedStyle(input);
-      const ctx = document.createElement("canvas").getContext("2d");
-      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      const before = ctx.measureText(input.value.slice(0, position)).width;
-      const ch = ctx.measureText(input.value[position] || " ").width;
-      const origin = els.fault.getBoundingClientRect().left;
-      const left = input.getBoundingClientRect().left - origin
-        + parseFloat(cs.paddingLeft) + before - input.scrollLeft + ch / 2;
-      const mark = document.createElement("span");
-      mark.className = "caret-mark";
-      mark.style.left = Math.max(0, left) + "px";
-      els.faultCaret.replaceChildren(mark);
-    } else {
-      els.faultCaret.replaceChildren();
-    }
+    els.faultCaret.replaceChildren();
+    if (position == null) return;
+    const input = els.pattern;
+    const cs = getComputedStyle(input);
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const before = ctx.measureText(input.value.slice(0, position)).width;
+    const ch = ctx.measureText(input.value[position] || " ").width;
+    const left = input.getBoundingClientRect().left - els.fault.getBoundingClientRect().left
+      + parseFloat(cs.paddingLeft) + before - input.scrollLeft + ch / 2;
+    const mark = document.createElement("span");
+    mark.className = "caret-mark";
+    mark.style.left = Math.max(0, left) + "px";
+    els.faultCaret.append(mark);
   }
   function clearFault() {
     els.fault.hidden = true;
-    els.mimic.classList.remove("stale");
     els.patternWrap.classList.remove("has-fault");
+    els.mimic.classList.remove("stale");
   }
 
-  /* ---------------- signal ---------------- */
-  function setSignal(aspect, word, detail) {
+  /* ---------------- verdict ---------------- */
+  function setVerdict(aspect, word, detail) {
     els.signal.dataset.aspect = aspect;
     els.signalWord.textContent = word;
     els.signalDetail.textContent = detail;
   }
-  function updateSignal() {
+  function updateVerdict() {
     const d = state.data;
     if (d.mode === "full") {
-      if (d.result.matched) setSignal("green", "Match", "whole string accepted");
-      else setSignal("red", "No match", d.text.length ? "string rejected" : "empty string rejected");
+      if (d.result.matched) setVerdict("green", "Match", "whole string accepted");
+      else setVerdict("red", "No match", d.text.length ? "string rejected" : "empty string rejected");
     } else {
       const n = d.result.matches.length;
       const nonEmpty = d.result.matches.filter(([a, b]) => b > a).length;
-      if (nonEmpty) setSignal("green", n === 1 ? "1 match" : `${n} matches`, "leftmost-longest");
-      else if (n) setSignal("yellow", "Empty matches", "pattern accepts “”");
-      else setSignal("red", "No match", "nothing found");
+      if (nonEmpty) setVerdict("green", n === 1 ? "1 match" : `${n} matches`, "leftmost-longest");
+      else if (n) setVerdict("yellow", "Empty", "only empty matches");
+      else setVerdict("red", "No match", "nothing found");
     }
   }
 
   /* ---------------- views ---------------- */
   const CAPTIONS = {
-    nfa: (d) => `Thompson construction: ${d.nfa.states} states, ${d.nfa.edges.length} tracks.`
-      + (d.mode === "search" ? " Search restarts at state " + d.nfa.start + " on every character." : ""),
+    nfa: (d) => `Thompson construction · ${d.nfa.states} states · ${d.nfa.edges.length} transitions`
+      + (d.mode === "search" ? ` · search restarts at state ${d.nfa.start} on every character` : ""),
     dfa: (d) => d.dfa.truncated
-      ? `Subset construction stopped at ${d.dfa.states} states.`
-      : `Subset construction, minimized: ${d.dfa.states} states. Hover a state for its NFA set.`,
-    ast: () => "Recursive-descent parse. Chains of · and | are flattened.",
-    tokens: () => "Tokenizer output. Dashed tokens are implicit concatenation.",
+      ? `Subset construction stopped at ${d.dfa.states} states`
+      : `Subset construction, minimized · ${d.dfa.states} states · hover a state for its NFA set`,
+    ast: (d) => `Recursive-descent parse · ${d.ast.build.length} nodes, built bottom-up`,
+    tokens: (d) => `Tokenizer · ${d.tokens.filter((t) => t.type !== "CONCAT").length} tokens; dashed ones are implicit concatenation`,
   };
 
   async function drawView() {
@@ -247,24 +228,27 @@
     if (!d) return;
     els.caption.textContent = CAPTIONS[state.view](d);
     els.mimic.setAttribute("aria-labelledby", "tab-" + state.view);
+    els.describerLabel.textContent = state.view === "ast" ? "Pattern, as the parser reads it" : "Input";
+    renderBerths();
+    els.zoomBtn.hidden = state.view === "tokens";
 
-    zoomBtn.hidden = state.view === "tokens";
     if (state.view === "tokens") {
       els.mimic.replaceChildren(tokenStrip(d.tokens));
+      applyStep(false);
       return;
     }
     let svg = state.svgCache[state.view];
     if (!svg) {
-      const dot = state.view === "ast" ? d.ast.dot : d[state.view].dot;
+      const dot = d[state.view].dot;
       try {
         svg = await renderDot(dot, state.view);
-      } catch (e) {
+      } catch {
         els.mimic.replaceChildren(msg("The graph renderer didn't load. Reload the page to try again."));
         return;
       }
+      if (d !== state.data) return; // superseded while rendering
       state.svgCache[state.view] = svg;
     }
-    if (d !== state.data) return; // superseded while rendering
     els.mimic.replaceChildren(svg);
     applyZoom();
     applyStep(false);
@@ -303,10 +287,10 @@
     return wrap;
   }
 
-  document.querySelectorAll(".view-switch [role=tab]").forEach((tab) => {
+  const tabs = [...document.querySelectorAll(".tabs [role=tab]")];
+  tabs.forEach((tab) => {
     tab.addEventListener("click", () => selectView(tab.dataset.view));
     tab.addEventListener("keydown", (e) => {
-      const tabs = [...document.querySelectorAll(".view-switch [role=tab]")];
       const i = tabs.indexOf(tab);
       let j = null;
       if (e.key === "ArrowRight") j = (i + 1) % tabs.length;
@@ -314,61 +298,78 @@
       if (j != null) { e.preventDefault(); tabs[j].focus(); selectView(tabs[j].dataset.view); }
     });
   });
-  function selectView(view) {
+  async function selectView(view, { replay = true } = {}) {
+    const changed = view !== state.view;
+    stop();
     state.view = view;
-    document.querySelectorAll(".view-switch [role=tab]").forEach((t) => {
+    tabs.forEach((t) => {
       const on = t.dataset.view === view;
       t.setAttribute("aria-selected", String(on));
       t.tabIndex = on ? 0 : -1;
     });
     writeUrl();
-    drawView();
+    await drawView();
+    if (view === "ast" && changed && replay) replayBuild();
   }
 
-  // Zoom: "auto" fits the panel unless that would shrink the drawing below
-  // ~55%, in which case it shows full size and the panel scrolls.
-  const zoomBtn = $("zoom-btn");
-  let zoomChoice = "auto";
+  /* ---------------- zoom ---------------- */
+  // "auto" fits the panel unless that would shrink the drawing below ~55%.
   function applyZoom() {
     const svg = els.mimic.querySelector("svg");
-    let natural = zoomChoice === "natural";
-    if (zoomChoice === "auto" && svg) {
-      const avail = els.mimic.clientWidth - 40;
-      natural = avail / parseFloat(svg.style.width) < 0.55;
+    let natural = state.zoom === "natural";
+    if (state.zoom === "auto" && svg) {
+      natural = (els.mimic.clientWidth - 48) / parseFloat(svg.style.width) < 0.55;
     }
     els.mimic.classList.toggle("natural", natural);
-    zoomBtn.setAttribute("aria-pressed", String(natural));
-    zoomBtn.title = natural ? "Fit the diagram to the panel" : "Show the diagram at full size";
+    els.zoomBtn.setAttribute("aria-pressed", String(natural));
+    els.zoomBtn.title = natural ? "Fit the diagram to the panel" : "Show the diagram at full size";
   }
-  zoomBtn.addEventListener("click", () => {
-    zoomChoice = els.mimic.classList.contains("natural") ? "fit" : "natural";
+  els.zoomBtn.addEventListener("click", () => {
+    state.zoom = els.mimic.classList.contains("natural") ? "fit" : "natural";
     applyZoom();
   });
-  addEventListener("resize", () => { if (zoomChoice === "auto") applyZoom(); });
+  addEventListener("resize", () => { if (state.zoom === "auto") applyZoom(); });
 
-  /* ---------------- describer (input tape) ---------------- */
+  /* ---------------- timeline: simulation steps or parse-tree build steps ---------------- */
+  const isBuild = () => state.view === "ast";
+  const lastStep = () => !state.data ? 0 : isBuild() ? state.data.ast.build.length : state.data.trace.length - 1;
+  const getStep = () => (isBuild() ? state.astStep : state.step);
+  function setStep(n) {
+    if (isBuild()) state.astStep = n; else state.step = n;
+  }
+
   function renderBerths() {
     const d = state.data;
     els.berths.replaceChildren();
-    if (!d.text.length) {
+    const source = isBuild() ? d.pattern : d.text;
+    if (!source.length) {
       const note = document.createElement("span");
       note.className = "berth empty-note";
-      note.textContent = "empty string";
+      note.textContent = isBuild() ? "empty pattern" : "empty string";
       els.berths.append(note);
       return;
     }
-    const matched = new Uint8Array(d.text.length);
-    if (d.mode === "search") {
+    const matched = new Uint8Array(source.length);
+    if (!isBuild() && d.mode === "search") {
       for (const [a, b] of d.result.matches) for (let i = a; i < b; i++) matched[i] = 1;
     }
-    [...d.text].forEach((ch, i) => {
+    [...source].forEach((ch, i) => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "berth" + (matched[i] ? " matched" : "") + (ch === " " ? " space" : "");
       b.textContent = ch === " " ? "" : ch;
-      b.setAttribute("aria-label", `Step to character ${i + 1}: ${ch === " " ? "space" : ch}`);
       b.tabIndex = -1;
-      b.addEventListener("click", () => { stop(); state.step = i + 1; applyStep(true); });
+      if (isBuild()) {
+        b.setAttribute("aria-label", `Character ${i + 1}: ${ch === " " ? "space" : ch}`);
+        b.addEventListener("click", () => {
+          // jump to the step that first builds a node starting here
+          const k = d.ast.build.findIndex((n) => n.span[0] <= i && i < n.span[1]);
+          if (k >= 0) { stop(); go(k + 1); }
+        });
+      } else {
+        b.setAttribute("aria-label", `Step to character ${i + 1}: ${ch === " " ? "space" : ch}`);
+        b.addEventListener("click", () => { stop(); go(i + 1); });
+      }
       els.berths.append(b);
     });
   }
@@ -376,37 +377,39 @@
   function applyStep(animate) {
     const d = state.data;
     if (!d) return;
-    const steps = d.trace;
-    const s = steps[state.step];
-    els.scrub.value = String(state.step);
+    const step = getStep();
+    const last = lastStep();
+    els.scrub.max = String(last);
+    els.scrub.value = String(step);
+    els.prev.disabled = els.first.disabled = step === 0;
+    els.next.disabled = els.last.disabled = step === last;
+    els.play.disabled = last < 1;
+    if (isBuild()) applyBuildStep(step, animate);
+    else applyTraceStep(step, animate);
+  }
 
-    // berths
+  function applyTraceStep(step, animate) {
+    const d = state.data;
+    const s = d.trace[step];
     const cells = els.berths.querySelectorAll(".berth:not(.empty-note)");
     cells.forEach((c, i) => {
-      c.classList.toggle("read", i < state.step - 1);
-      c.classList.toggle("current", i === state.step - 1);
+      c.classList.remove("span");
+      c.classList.toggle("read", i < step - 1);
+      c.classList.toggle("current", i === step - 1);
     });
-    const cur = cells[state.step - 1];
-    if (cur && animate) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (animate && cells[step - 1]) cells[step - 1].scrollIntoView({ block: "nearest", inline: "nearest" });
 
-    // readout
     const read = s.char == null ? "start" : `read ${JSON.stringify(s.char)}`;
     let where;
     if (state.view === "dfa") {
       if (d.mode === "search") where = "DFA trace runs in full-match mode";
-      else where = s.dfa == null ? "DFA: dead state, can't match" : `DFA state ${s.dfa}`;
+      else where = s.dfa == null ? "dead state, can't match" : `DFA state ${s.dfa}`;
     } else {
-      where = s.states.length ? `lit {${s.states.join(", ")}}` : "no states lit, can't match";
+      where = s.states.length ? `active {${s.states.join(", ")}}` : "no active states, can't match";
       if (d.mode === "search" && s.accepting) where += " · a match ends here";
     }
-    els.readout.textContent = `step ${state.step}/${steps.length - 1} · ${read} · ${where}`;
+    els.readout.textContent = `step ${step}/${d.trace.length - 1} · ${read} · ${where}`;
 
-    // levers
-    els.prev.disabled = els.reset.disabled = state.step === 0;
-    els.next.disabled = els.end.disabled = state.step === steps.length - 1;
-    els.play.disabled = steps.length < 2;
-
-    // lamps
     const svg = els.mimic.querySelector("svg");
     if (!svg) return;
     if (svg.classList.contains("nfa")) {
@@ -436,36 +439,77 @@
     }
   }
 
+  function applyBuildStep(step, animate) {
+    const d = state.data;
+    const build = d.ast.build;
+    const built = new Set(build.slice(0, step).map((b) => b.node));
+    const fresh = step > 0 ? build[step - 1] : null;
+
+    const svg = els.mimic.querySelector("svg.ast");
+    if (svg) {
+      svg.querySelectorAll(".node[id^='ast-']").forEach((n) => {
+        const id = Number(n.id.slice(4));
+        n.classList.toggle("pending", !built.has(id));
+        const isFresh = fresh && fresh.node === id;
+        n.classList.toggle("fresh", !!isFresh);
+        if (isFresh && animate) { n.style.animation = "none"; void n.getBBox(); n.style.animation = ""; }
+      });
+      for (const b of build) {
+        const e = svg.querySelector(`#ast-e${b.node}`);
+        if (e) e.classList.toggle("pending", !(built.has(b.node) && built.has(b.parent)));
+      }
+    }
+
+    const cells = els.berths.querySelectorAll(".berth:not(.empty-note)");
+    cells.forEach((c, i) => {
+      c.classList.remove("read", "current");
+      c.classList.toggle("span", !!fresh && fresh.span[0] <= i && i < fresh.span[1]);
+    });
+
+    if (!fresh) {
+      els.readout.textContent = `step 0/${build.length} · nothing built yet`;
+    } else {
+      const src = d.pattern.slice(fresh.span[0], fresh.span[1]);
+      const what = fresh.kind === "char" ? `char ${fresh.label}` : fresh.kind === "empty" ? "empty (ε)" : fresh.kind;
+      const from = src ? ` from ${JSON.stringify(src)}` : "";
+      els.readout.textContent = `step ${step}/${build.length} · built ${what}${from}`;
+    }
+  }
+
   function go(step) {
-    const last = state.data ? state.data.trace.length - 1 : 0;
-    state.step = Math.max(0, Math.min(last, step));
+    setStep(Math.max(0, Math.min(lastStep(), step)));
     applyStep(true);
   }
   function stop() {
     if (state.playing) clearInterval(state.playing);
     state.playing = null;
     els.play.querySelector("use").setAttribute("href", "#i-play");
-    els.play.setAttribute("aria-label", "Run");
+    els.play.setAttribute("aria-label", "Play");
   }
   function play() {
     if (!state.data) return;
     if (state.playing) return stop();
-    const last = state.data.trace.length - 1;
-    if (state.step >= last) go(0);
+    if (getStep() >= lastStep()) go(0);
     els.play.querySelector("use").setAttribute("href", "#i-pause");
     els.play.setAttribute("aria-label", "Pause");
-    const delay = matchMedia("(prefers-reduced-motion: reduce)").matches ? 900 : 650;
+    const delay = isBuild() ? 420 : 650;
     state.playing = setInterval(() => {
-      if (state.step >= last) return stop();
-      go(state.step + 1);
-    }, delay);
+      if (getStep() >= lastStep()) return stop();
+      go(getStep() + 1);
+    }, reducedMotion() ? delay * 1.4 : delay);
+  }
+  function replayBuild() {
+    if (reducedMotion()) return; // leave the finished tree on screen
+    stop();
+    go(0);
+    play();
   }
 
   els.play.addEventListener("click", play);
-  els.prev.addEventListener("click", () => { stop(); go(state.step - 1); });
-  els.next.addEventListener("click", () => { stop(); go(state.step + 1); });
-  els.reset.addEventListener("click", () => { stop(); go(0); });
-  els.end.addEventListener("click", () => { stop(); go(Infinity); });
+  els.prev.addEventListener("click", () => { stop(); go(getStep() - 1); });
+  els.next.addEventListener("click", () => { stop(); go(getStep() + 1); });
+  els.first.addEventListener("click", () => { stop(); go(0); });
+  els.last.addEventListener("click", () => { stop(); go(Infinity); });
   els.scrub.addEventListener("input", () => { stop(); go(Number(els.scrub.value)); });
 
   document.addEventListener("keydown", (e) => {
@@ -473,8 +517,8 @@
     if (t.matches("input[type=text], textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
     if (t.matches("[role=tab]") && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
     const map = {
-      ArrowLeft: () => { stop(); go(state.step - 1); },
-      ArrowRight: () => { stop(); go(state.step + 1); },
+      ArrowLeft: () => { stop(); go(getStep() - 1); },
+      ArrowRight: () => { stop(); go(getStep() + 1); },
       Home: () => { stop(); go(0); },
       End: () => { stop(); go(Infinity); },
       " ": () => { if (!t.matches("button, input, summary, a")) play(); else return false; },
@@ -488,20 +532,20 @@
 
   function setMode(mode) {
     state.mode = mode;
-    document.querySelectorAll(".mode-switch [role=radio]").forEach((b) => {
+    document.querySelectorAll(".segmented [role=radio]").forEach((b) => {
       const on = b.dataset.mode === mode;
       b.setAttribute("aria-checked", String(on));
       b.tabIndex = on ? 0 : -1;
     });
   }
-  document.querySelectorAll(".mode-switch [role=radio]").forEach((b) => {
+  document.querySelectorAll(".segmented [role=radio]").forEach((b) => {
     b.addEventListener("click", () => { setMode(b.dataset.mode); analyze(); });
     b.addEventListener("keydown", (e) => {
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
         e.preventDefault();
         const next = state.mode === "full" ? "search" : "full";
         setMode(next);
-        document.querySelector(`.mode-switch [data-mode=${next}]`).focus();
+        document.querySelector(`.segmented [data-mode=${next}]`).focus();
         analyze();
       }
     });
@@ -516,9 +560,18 @@
     });
   });
 
+  // close the syntax popover on outside click / Escape
+  const syntax = document.querySelector(".syntax");
+  document.addEventListener("click", (e) => { if (syntax.open && !syntax.contains(e.target)) syntax.open = false; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && syntax.open) { syntax.open = false; syntax.querySelector("summary").focus(); } });
+
   /* ---------------- boot ---------------- */
   readUrl();
   setMode(state.mode);
-  selectView(state.view);
+  tabs.forEach((t) => {
+    const on = t.dataset.view === state.view;
+    t.setAttribute("aria-selected", String(on));
+    t.tabIndex = on ? 0 : -1;
+  });
   analyze();
 })();

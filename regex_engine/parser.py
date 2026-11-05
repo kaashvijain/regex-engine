@@ -41,6 +41,14 @@ class Parser:
         if pattern_length is None:
             pattern_length = (tokens[-1].pos + 1) if tokens else 0
         self.end_pos = pattern_length
+        self.seq = 0  # creation counter, so the UI can replay the build
+
+    def _made(self, node, start, end):
+        """Stamp a freshly built node with its build order and pattern span."""
+        node.order = self.seq
+        node.span = (start, end)
+        self.seq += 1
+        return node
 
     def current(self):
         if self.pos < len(self.tokens):
@@ -67,20 +75,21 @@ class Parser:
         while self.current() and self.current().type == TokenType.OR:
             self.eat(TokenType.OR)
             right = self.parse_term()
-            node = OrNode(node, right)
+            node = self._made(OrNode(node, right), node.span[0], right.span[1])
         return node
 
     def parse_term(self):
         tok = self.current()
         # An empty alternative: '', 'a|', '|a', '()'
         if tok is None or tok.type in (TokenType.OR, TokenType.RPAREN):
-            return EmptyNode()
+            at = self._where()
+            return self._made(EmptyNode(), at, at)
 
         node = self.parse_factor()
         while self.current() and self.current().type == TokenType.CONCAT:
             self.eat(TokenType.CONCAT)
             right = self.parse_factor()
-            node = ConcatNode(node, right)
+            node = self._made(ConcatNode(node, right), node.span[0], right.span[1])
         return node
 
     def parse_factor(self):
@@ -88,13 +97,14 @@ class Parser:
 
         if token.type == TokenType.CHARSET:
             self.eat(TokenType.CHARSET)
-            node = CharNode(token.value)
+            node = self._made(CharNode(token.value), token.pos, token.pos + len(token.text))
         elif token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
             node = self.parse_expression()
             if self.current() is None:
                 raise RegexSyntaxError("Unclosed group '('", token.pos)
-            self.eat(TokenType.RPAREN)
+            close = self.eat(TokenType.RPAREN)
+            node.span = (token.pos, close.pos + 1)  # the group's node covers its parens
         elif token.type in _POSTFIX:
             raise RegexSyntaxError(
                 f"'{_SYMBOL[token.type]}' has nothing to repeat", token.pos
@@ -113,7 +123,7 @@ class Parser:
                     f"Multiple repeat operators: '{_SYMBOL[tok.type]}' follows another one",
                     tok.pos,
                 )
-            node = _POSTFIX[tok.type](node)
+            node = self._made(_POSTFIX[tok.type](node), node.span[0], tok.pos + 1)
             repeated = True
         return node
 

@@ -10,8 +10,7 @@ import regex_engine
 from regex_engine.dfa import build_dfa
 from regex_engine.export import (
     annotate_trace,
-    ast_to_dot,
-    ast_to_json,
+    ast_to_view,
     dfa_to_json,
     nfa_to_json,
     tokens_to_json,
@@ -59,7 +58,7 @@ def analyze(req: AnalyzeRequest):
         "text": req.text,
         "mode": req.mode,
         "tokens": tokens_to_json(rx.tokens),
-        "ast": {"tree": ast_to_json(rx.ast), "dot": ast_to_dot(rx.ast)},
+        "ast": ast_to_view(rx.ast),
         "nfa": nfa_to_json(rx.nfa),
         "dfa": dfa_to_json(dfa),
         "trace": annotate_trace(

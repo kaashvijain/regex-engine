@@ -15,6 +15,12 @@ def test_full_match():
     assert len(body["trace"]) == 5
     assert body["ast"]["tree"]["type"] == "Concat"
     assert body["ast"]["dot"].startswith("digraph")
+    # a(b|c)*d builds leaves before their parents, and the root last
+    build = body["ast"]["build"]
+    assert build[0] == {"node": 1, "parent": 0, "span": [0, 1], "kind": "char", "label": "a"}
+    assert build[-1]["node"] == 0 and build[-1]["span"] == [0, 8]
+    star = next(b for b in build if b["kind"] == "star")
+    assert star["span"] == [1, 7]
     # first char 'a' takes exactly one symbol edge; the DFA ends accepting
     assert len(body["trace"][1]["taken"]) == 1
     assert body["trace"][-1]["dfa"] in body["dfa"]["accepting"]

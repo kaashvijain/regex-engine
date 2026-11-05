@@ -1,8 +1,10 @@
 # Signalbox: a regex engine you can watch
 
-A regular-expression engine written from scratch in Python, with a web UI that draws its internals as a railway signal-box panel. Type a pattern and see the automaton laid out as track. Type a string and step a "train" through it, watching which states light up.
+A regular-expression engine written from scratch in Python, with a web UI that shows its internals. Type a pattern and watch the parser build the tree and the automaton get drawn. Type a string and step through the simulation, watching which states are active at each character.
 
 ![Signalbox showing the Thompson NFA for a(b|c)*d mid-simulation](docs/screenshot.png)
+
+The URL keeps the pattern, string, mode and tab, so you can share a view by copying the address bar.
 
 ## What it shows
 
@@ -10,7 +12,7 @@ A regular-expression engine written from scratch in Python, with a web UI that d
 |---|---|
 | **NFA** | The Thompson-construction automaton. States lit by the simulation and the tracks taken on the last character are highlighted. |
 | **DFA** | The subset-construction DFA after Moore minimization. Hover a state to see which NFA states it stands for. |
-| **Parse tree** | The AST from the recursive-descent parser. |
+| **Parse tree** | The AST from the recursive-descent parser, built live node by node in the order the parser creates them. Each new node's slice of the pattern is highlighted. |
 | **Tokens** | Tokenizer output, including the implicit concatenation tokens. |
 
 - **Full match** mode answers "does the whole string match?"

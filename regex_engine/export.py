@@ -22,6 +22,13 @@ def tokens_to_json(tokens):
 
 
 def ast_to_json(node):
+    out = _ast_to_json(node)
+    out["order"] = getattr(node, "order", 0)
+    out["span"] = list(getattr(node, "span", (0, 0)))
+    return out
+
+
+def _ast_to_json(node):
     if isinstance(node, CharNode):
         return {"type": "Char", "label": node.value.label(), "children": []}
     if isinstance(node, EmptyNode):
@@ -131,31 +138,45 @@ def annotate_trace(nfa, dfa, steps, text, search=False):
     return steps
 
 
-def ast_to_dot(node):
-    """Top-down tree drawing of the (flattened) AST."""
+def ast_to_view(node):
+    """Tree drawing of the (flattened) AST plus the order the parser built it.
+
+    Returns {"tree", "dot", "build"}; `build` lists drawing node ids in the
+    order the parser created them, each with the pattern span it covers.
+    """
     tree = ast_to_json(node)
     lines = [
         "digraph AST {\n",
-        '  bgcolor="transparent"; pad=0.2; nodesep=0.3; ranksep=0.4;\n',
+        '  bgcolor="transparent"; pad=0.2; nodesep=0.3; ranksep=0.42;\n',
         '  node [shape=box, style=rounded, fontname="monospace", fontsize=12, height=0.36, margin="0.18,0.05"];\n',
         "  edge [arrowhead=none];\n",
     ]
+    build = []
     counter = [0]
 
-    def walk(n):
+    def walk(n, parent=None):
         nid = counter[0]
         counter[0] += 1
         label = n["label"] if n["type"] in ("Char", "Empty") else f'{n["label"]} {n["type"].lower()}'
         kind = "leaf" if not n["children"] else "op"
         lines.append(f'  a{nid} [id="ast-{nid}", label="{_dot_escape(label)}", class="{kind}"];\n')
+        build.append({"node": nid, "parent": parent, "order": n["order"], "span": n["span"],
+                      "kind": n["type"].lower(), "label": n["label"]})
         for c in n["children"]:
-            cid = walk(c)
-            lines.append(f"  a{nid} -> a{cid};\n")
+            cid = walk(c, nid)
+            lines.append(f'  a{nid} -> a{cid} [id="ast-e{cid}"];\n')
         return nid
 
     walk(tree)
     lines.append("}\n")
-    return "".join(lines)
+    build.sort(key=lambda b: b["order"])
+    for b in build:
+        del b["order"]
+    return {"tree": tree, "dot": "".join(lines), "build": build}
+
+
+def ast_to_dot(node):
+    return ast_to_view(node)["dot"]
 
 
 def dfa_to_json(dfa):
