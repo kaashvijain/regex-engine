@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signalbox · Regex Engine</title>
+  <meta name="description" content="A from-scratch regex engine you can watch: tokens, parse tree, Thompson NFA and minimized DFA, drawn as a railway signal-box panel.">
+  <meta name="theme-color" content="#c3cbbf" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151a17" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=DotGothic16&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--
+THESIS: The regex engine is an interlocking. The automaton is drawn as track on a signal-box mimic panel and the input string runs over it like a train; refuses the dark-IDE regex-tester layout.
+OWN-WORLD: Panel-grey ground, black traffolyte nameplates engraved in condensed caps, track as heavy rules, incandescent route lamps (warm white), signal aspects red/yellow/green, train-describer dot-matrix cells in amber.
+STORY: Type a pattern, see the route drawn; type a string, see the signal clear or stay at danger; step the train and watch which track circuits light.
+FIRST VIEWPORT: Nameplate strip; control desk with pattern plate, test-string plate and signal head; below, the mimic panel fills the width with the describer and stepping levers underneath.
+FORM: railway signal-box mimic panel, candidate 5 of 7 (user-chosen), seed 7f02c787.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4.5v11l9-5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 20 20"><path d="M5.5 4.5h3v11h-3zM11.5 4.5h3v11h-3z" fill="currentColor"/></symbol>
+    <symbol id="i-next" viewBox="0 0 20 20"><path d="M4.5 4.5v11l8-5.5zM13.5 4.5h2v11h-2z" fill="currentColor"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 20 20"><path d="M15.5 4.5v11l-8-5.5zM4.5 4.5h2v11h-2z" fill="currentColor"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 20 20"><path d="M4.5 4.5h2v11h-2zM16 4.5v11l-8-5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-end" viewBox="0 0 20 20"><path d="M4 4.5v11l8-5.5zM13.5 4.5h2v11h-2z" fill="currentColor"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 1.8v2.4M10 15.8v2.4M1.8 10h2.4M15.8 10h2.4M4.2 4.2l1.7 1.7M14.1 14.1l1.7 1.7M4.2 15.8l1.7-1.7M14.1 5.9l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 20 20"><path d="M15.8 12.6A6.5 6.5 0 0 1 7.4 4.2a6.5 6.5 0 1 0 8.4 8.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-code" viewBox="0 0 20 20"><path d="M7 6l-4 4 4 4M13 6l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 20 20"><path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-.9.9M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l.9-.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<header class="nameplate-strip">
+  <div class="nameplate">
+    <span class="nameplate-title">Signalbox</span>
+    <span class="nameplate-sub">a regex engine, drawn as an interlocking</span>
+  </div>
+  <nav class="strip-actions" aria-label="Site">
+    <button class="plate-btn" id="share-btn" type="button" title="Copy a link to this pattern and string">
+      <svg class="icon" aria-hidden="true"><use href="#i-link"/></svg><span>Copy link</span>
+    </button>
+    <a class="plate-btn" href="https://github.com/kaashvijain/regex-engine" target="_blank" rel="noopener">
+      <svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span>Source</span>
+    </a>
+    <button class="plate-btn icon-only" id="theme-btn" type="button" aria-label="Switch to dark panel">
+      <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>
+    </button>
+  </nav>
+</header>
+
+<main>
+  <section class="desk" aria-label="Pattern and test string">
+    <div class="desk-inputs">
+      <div class="field">
+        <label class="engraved" for="pattern">Pattern</label>
+        <div class="plate-input pattern-wrap" id="pattern-wrap">
+          <span class="slash" aria-hidden="true">/</span>
+          <input id="pattern" class="mono" type="text" spellcheck="false" autocomplete="off" autocapitalize="off"
+                 maxlength="200" aria-describedby="pattern-error" value="a(b|c)*d">
+          <span class="slash" aria-hidden="true">/</span>
+        </div>
+        <div class="fault" id="pattern-error" role="status" aria-live="polite" hidden>
+          <div class="fault-caret" id="fault-caret" aria-hidden="true"></div>
+          <p class="fault-msg"><span class="fault-tag">Fault</span> <span id="fault-text"></span></p>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <label class="engraved" for="text">Test string</label>
+          <div class="mode-switch" role="radiogroup" aria-label="Matching mode">
+            <button type="button" role="radio" aria-checked="true" data-mode="full">Full match</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="search">Search</button>
+          </div>
+        </div>
+        <div class="plate-input">
+          <input id="text" class="mono" type="text" spellcheck="false" autocomplete="off" autocapitalize="off"
+                 maxlength="2000" value="abcbd">
+        </div>
+      </div>
+
+      <div class="presets" aria-label="Example patterns">
+        <span class="engraved small">Try</span>
+        <button type="button" class="preset" data-p="a(b|c)*d" data-t="abcbd" data-m="full">a(b|c)*d</button>
+        <button type="button" class="preset" data-p="(ab)+|c?" data-t="abab" data-m="full">(ab)+|c?</button>
+        <button type="button" class="preset" data-p="[a-z]+@[a-z]+\.com" data-t="write to ada@lovelace.com or alan@turing.com" data-m="search">emails</button>
+        <button type="button" class="preset" data-p="-?\d+(\.\d+)?" data-t="t = -3.14, n = 42" data-m="search">numbers</button>
+        <button type="button" class="preset" data-p="(a|b)*abb" data-t="babb" data-m="full">(a|b)*abb</button>
+      </div>
+    </div>
+
+    <div class="signal" id="signal" aria-live="polite">
+      <div class="signal-head" aria-hidden="true">
+        <span class="aspect red"></span>
+        <span class="aspect yellow"></span>
+        <span class="aspect green"></span>
+      </div>
+      <div class="signal-plate">
+        <span class="signal-word" id="signal-word">—</span>
+        <span class="signal-detail" id="signal-detail"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Machine diagram">
+    <div class="panel-bar">
+      <div class="view-switch" role="tablist" aria-label="Diagram">
+        <button role="tab" id="tab-nfa" aria-selected="true" aria-controls="mimic" data-view="nfa">NFA</button>
+        <button role="tab" id="tab-dfa" aria-selected="false" aria-controls="mimic" data-view="dfa">DFA</button>
+        <button role="tab" id="tab-ast" aria-selected="false" aria-controls="mimic" data-view="ast">Parse tree</button>
+        <button role="tab" id="tab-tokens" aria-selected="false" aria-controls="mimic" data-view="tokens">Tokens</button>
+      </div>
+      <div class="panel-tools">
+        <p class="panel-caption" id="panel-caption"></p>
+        <button type="button" class="zoom-btn" id="zoom-btn" aria-pressed="false" title="Show the diagram at full size">1:1</button>
+      </div>
+    </div>
+
+    <div class="mimic" id="mimic" role="tabpanel" aria-labelledby="tab-nfa" tabindex="0">
+      <div class="mimic-msg" id="mimic-msg">Drawing the panel…</div>
+    </div>
+
+    <div class="describer" aria-label="Simulation">
+      <div class="describer-head">
+        <span class="engraved small">Train describer</span>
+        <span class="describer-readout mono" id="readout"></span>
+      </div>
+      <div class="berths" id="berths"></div>
+      <div class="levers">
+        <button type="button" class="lever" id="btn-reset" aria-label="Back to start" title="Back to start (Home)"><svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg></button>
+        <button type="button" class="lever" id="btn-prev" aria-label="Step back" title="Step back (←)"><svg class="icon" aria-hidden="true"><use href="#i-prev"/></svg></button>
+        <button type="button" class="lever primary" id="btn-play" aria-label="Run" title="Run (Space)"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button>
+        <button type="button" class="lever" id="btn-next" aria-label="Step forward" title="Step forward (→)"><svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></button>
+        <button type="button" class="lever" id="btn-end" aria-label="Jump to end" title="Jump to end (End)"><svg class="icon" aria-hidden="true"><use href="#i-end"/></svg></button>
+        <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Simulation step">
+      </div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="legend" aria-labelledby="legend-h">
+      <h2 class="engraved" id="legend-h">Reading the panel</h2>
+      <ul class="legend-list">
+        <li><span class="key key-lamp"></span><span><b>Lit lamp</b> — a state the machine could be in after the characters read so far.</span></li>
+        <li><span class="key key-accept"></span><span><b>Double ring</b> — the accepting state. Green when the train stops on it.</span></li>
+        <li><span class="key key-track"></span><span><b>Solid track</b> — consumes one character matching its label.</span></li>
+        <li><span class="key key-eps"></span><span><b>Dashed track</b> — an ε-move, taken for free.</span></li>
+        <li><span class="key key-taken"></span><span><b>Lit track</b> — the moves taken on the last character.</span></li>
+      </ul>
+      <p class="legend-note">The NFA runs every possible route at once (Thompson simulation). The DFA tab pre-computes those sets of states, then minimizes the result.</p>
+    </section>
+
+    <details class="rulebook">
+      <summary class="engraved">Syntax rule book</summary>
+      <table>
+        <tbody>
+          <tr><td class="mono">abc</td><td>literal characters</td></tr>
+          <tr><td class="mono">.</td><td>any character except newline</td></tr>
+          <tr><td class="mono">[a-z] [^0-9]</td><td>character class, ranges, negation</td></tr>
+          <tr><td class="mono">\d \w \s</td><td>digit, word, whitespace (uppercase negates)</td></tr>
+          <tr><td class="mono">\. \* \(</td><td>escape a metacharacter</td></tr>
+          <tr><td class="mono">a* a+ a?</td><td>zero or more, one or more, optional</td></tr>
+          <tr><td class="mono">a|b</td><td>either side</td></tr>
+          <tr><td class="mono">( )</td><td>group</td></tr>
+        </tbody>
+      </table>
+      <p class="legend-note">Not supported: anchors, <span class="mono">{n,m}</span>, lazy quantifiers, backreferences. <b>Search</b> finds the leftmost-longest matches.</p>
+    </details>
+
+    <section class="stats" aria-label="Machine size">
+      <dl>
+        <div><dt>NFA states</dt><dd id="stat-nfa">–</dd></div>
+        <div><dt>DFA states</dt><dd id="stat-dfa">–</dd></div>
+        <div><dt>Tokens</dt><dd id="stat-tok">–</dd></div>
+      </dl>
+    </section>
+  </aside>
+</main>
+
+<footer class="footer">
+  Tokenizer → recursive-descent parser → Thompson NFA → subset-construction DFA → Moore minimization. Written from scratch in Python.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.24.0/dist/viz-global.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
