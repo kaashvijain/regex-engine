@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signalbox · Regex Engine</title>
+  <meta name="description" content="A from-scratch regex engine you can watch: tokens, a parse tree that builds itself, the Thompson NFA and the minimized DFA.">
+  <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f0f10" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- play / pause -->
+    <symbol id="i-play" viewBox="0 0 20 20"><path d="M6.5 4.2v11.6L16 10z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 20 20"><path d="M5.5 4.5h3v11h-3zM11.5 4.5h3v11h-3z" fill="currentColor"/></symbol>
+    <!-- first: bar + double arrow -->
+    <symbol id="i-first" viewBox="0 0 20 20"><path d="M3.5 4.5v11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M10.5 5.5 6 10l4.5 4.5M16 5.5 11.5 10l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <!-- previous: single chevron -->
+    <symbol id="i-prev" viewBox="0 0 20 20"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <!-- next: single chevron -->
+    <symbol id="i-next" viewBox="0 0 20 20"><path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <!-- last: double arrow + bar -->
+    <symbol id="i-last" viewBox="0 0 20 20"><path d="M16.5 4.5v11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 5.5 8.5 10 4 14.5M9.5 5.5 14 10l-4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 1.8v2.4M10 15.8v2.4M1.8 10h2.4M15.8 10h2.4M4.2 4.2l1.7 1.7M14.1 14.1l1.7 1.7M4.2 15.8l1.7-1.7M14.1 5.9l1.7-1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 20 20"><path d="M15.8 12.6A6.5 6.5 0 0 1 7.4 4.2a6.5 6.5 0 1 0 8.4 8.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<main>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">Signalbox</span>
+    <span class="brand-sub">a regex engine you can watch</span>
+  </div>
+  <div class="daynight" role="radiogroup" aria-label="Theme">
+    <button type="button" role="radio" aria-checked="true" data-theme-choice="light">
+      <svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span>Day</span>
+    </button>
+    <button type="button" role="radio" aria-checked="false" data-theme-choice="dark">
+      <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span>Night</span>
+    </button>
+  </div>
+</header>
+
+  <section class="desk" aria-label="Pattern and test string">
+    <div class="desk-inputs">
+      <div class="field">
+        <label class="label" for="pattern">Pattern</label>
+        <div class="input pattern-wrap" id="pattern-wrap">
+          <span class="slash" aria-hidden="true">/</span>
+          <input id="pattern" class="mono" type="text" spellcheck="false" autocomplete="off" autocapitalize="off"
+                 maxlength="200" aria-describedby="pattern-error" value="a(b|c)*d">
+          <span class="slash" aria-hidden="true">/</span>
+        </div>
+        <div class="fault" id="pattern-error" role="status" aria-live="polite" hidden>
+          <div class="fault-caret" id="fault-caret" aria-hidden="true"></div>
+          <p class="fault-msg" id="fault-text"></p>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <label class="label" for="text">Test string</label>
+          <div class="segmented" role="radiogroup" aria-label="Matching mode">
+            <button type="button" role="radio" aria-checked="true" data-mode="full">Full match</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="search">Search</button>
+          </div>
+        </div>
+        <div class="input">
+          <input id="text" class="mono" type="text" spellcheck="false" autocomplete="off" autocapitalize="off"
+                 maxlength="2000" value="abcbd">
+        </div>
+      </div>
+
+      <div class="presets" aria-label="Example patterns">
+        <span class="presets-label">Try</span>
+        <button type="button" class="preset" data-p="a(b|c)*d" data-t="abcbd" data-m="full">a(b|c)*d</button>
+        <button type="button" class="preset" data-p="(ab)+|c?" data-t="abab" data-m="full">(ab)+|c?</button>
+        <button type="button" class="preset" data-p="[a-z]+@[a-z]+\.com" data-t="write to ada@lovelace.com or alan@turing.com" data-m="search">emails</button>
+        <button type="button" class="preset" data-p="-?\d+(\.\d+)?" data-t="t = -3.14, n = 42" data-m="search">numbers</button>
+        <button type="button" class="preset" data-p="(a|b)*abb" data-t="babb" data-m="full">(a|b)*abb</button>
+        <details class="syntax">
+          <summary>Syntax</summary>
+          <dl class="syntax-list">
+            <div><dt class="mono">abc</dt><dd>literals</dd></div>
+            <div><dt class="mono">.</dt><dd>any char but newline</dd></div>
+            <div><dt class="mono">[a-z] [^0-9]</dt><dd>classes</dd></div>
+            <div><dt class="mono">\d \w \s</dt><dd>digit, word, space</dd></div>
+            <div><dt class="mono">\. \*</dt><dd>escapes</dd></div>
+            <div><dt class="mono">* + ?</dt><dd>repeat</dd></div>
+            <div><dt class="mono">a|b ( )</dt><dd>alternation, groups</dd></div>
+          </dl>
+        </details>
+      </div>
+    </div>
+
+    <div class="verdict" id="signal" aria-live="polite">
+      <div class="signal-head" aria-hidden="true">
+        <span class="aspect red"></span>
+        <span class="aspect yellow"></span>
+        <span class="aspect green"></span>
+      </div>
+      <div class="verdict-text">
+        <span class="verdict-word" id="signal-word">—</span>
+        <span class="verdict-detail" id="signal-detail"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Machine diagram">
+    <div class="panel-bar">
+      <div class="tabs" role="tablist" aria-label="Diagram">
+        <button role="tab" id="tab-nfa" aria-selected="true" aria-controls="mimic" data-view="nfa">NFA</button>
+        <button role="tab" id="tab-dfa" aria-selected="false" aria-controls="mimic" data-view="dfa">DFA</button>
+        <button role="tab" id="tab-ast" aria-selected="false" aria-controls="mimic" data-view="ast">Parse tree</button>
+        <button role="tab" id="tab-tokens" aria-selected="false" aria-controls="mimic" data-view="tokens">Tokens</button>
+      </div>
+      <div class="panel-tools">
+        <p class="panel-caption" id="panel-caption"></p>
+        <button type="button" class="zoom-btn" id="zoom-btn" aria-pressed="false" title="Show the diagram at full size">1:1</button>
+      </div>
+    </div>
+
+    <div class="mimic" id="mimic" role="tabpanel" aria-labelledby="tab-nfa" tabindex="0">
+      <div class="mimic-msg" id="mimic-msg">Drawing…</div>
+    </div>
+
+    <div class="describer" aria-label="Simulation">
+      <div class="describer-head">
+        <span class="label" id="describer-label">Input</span>
+        <span class="describer-readout mono" id="readout"></span>
+      </div>
+      <div class="berths" id="berths"></div>
+      <div class="levers">
+        <button type="button" class="lever" id="btn-reset" aria-label="First step" title="First step (Home)"><svg class="icon" aria-hidden="true"><use href="#i-first"/></svg></button>
+        <button type="button" class="lever" id="btn-prev" aria-label="Previous step" title="Previous step (←)"><svg class="icon" aria-hidden="true"><use href="#i-prev"/></svg></button>
+        <button type="button" class="lever primary" id="btn-play" aria-label="Play" title="Play (Space)"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button>
+        <button type="button" class="lever" id="btn-next" aria-label="Next step" title="Next step (→)"><svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></button>
+        <button type="button" class="lever" id="btn-end" aria-label="Last step" title="Last step (End)"><svg class="icon" aria-hidden="true"><use href="#i-last"/></svg></button>
+        <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Step">
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  Tokenizer → recursive-descent parser → Thompson NFA → subset-construction DFA → Moore minimization. Written from scratch in Python.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.24.0/dist/viz-global.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
